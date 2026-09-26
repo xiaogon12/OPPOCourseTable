@@ -17,7 +17,7 @@
 | 文件 | 装到哪 | 怎么装 |
 | --- | --- | --- |
 | `app-release.apk` | 手机（Android 8.0 以上） | 传进手机，**点开就装**（提示「未知来源」时允许一次） |
-| `CourseTableWatch.apk` | 手表（OPPO Watch X2） | 手表上没有能点开 APK 的安装界面，用数据线连电脑，电脑安装adb工具，手表进设置-关于手表-版本信息-连续点击版本号，开启开发者，然后在开发者开启ysb调试 `adb install CourseTableWatch.apk` |
+| `CourseTableWatch.apk` | 手表（OPPO Watch X2） | 手表上没有能点开 APK 的安装界面，用数据线连电脑，电脑安装adb工具，手表进设置-关于手表-版本信息-连续点击版本号，开启开发者，然后在开发者开启usb调试 `adb install CourseTableWatch.apk` |
 
 手表上也能拿到下载地址：**手表 →「我的」→「从手机接收」→「显示下载二维码（全屏）」**，用手机扫一下。
 
