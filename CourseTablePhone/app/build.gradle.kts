@@ -25,10 +25,10 @@ android {
         applicationId = "com.liyan.coursetable.phone"
         minSdk = 26
         targetSdk = 36
-        // versionCode 跟着 versionName 走：0.7.0 → 7。手表端也一样（都是 7）。
+        // versionCode 跟着 versionName 走：0.7.1 → 8。手表端也一样（都是 8）。
         // 开源发出去了就没法再改小，将来发版只能往上加。
-        versionCode = 7
-        versionName = "0.7.0"
+        versionCode = 8
+        versionName = "0.7.1"
     }
 
     signingConfigs {
