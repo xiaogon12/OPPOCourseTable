@@ -44,13 +44,12 @@ cd CourseTableWatch
 python tools/build.py --install
 ```
 
-> 两头都请构建 release，不要用 debug 包。
+
 
 ## 声明
 
-- **MIT 许可**，全文见下方。随便用、随便改、随便再发布。
-- **不联网、不收集任何信息、不上传任何数据。** 手机端要蓝牙权限只是为了和手表直连传 JSON，
-  没有统计 SDK、没有崩溃上报、没有广告。
+- **MIT 许可**，全文见下方。。
+- **不联网、不收集任何信息、不上传任何数据。** 手机端要蓝牙权限只是为了和手表直连传JSON，
 - 个人项目，**和 OPPO / ColorOS 官方无关**，也不是 Wear OS 应用。
   只在 OPPO Watch X2（OWW251，ColorOS Watch 16.0.0）上实测过。
 
