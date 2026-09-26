@@ -44,7 +44,8 @@ cd CourseTableWatch
 python tools/build.py --install
 ```
 
-
+# 感谢AI，让什么都不懂的人可以做应用
+做这个项目本身是身为大学生，课程表非常重要，所以开发这个项目
 
 ## 声明
 
