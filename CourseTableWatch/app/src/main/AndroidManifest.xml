@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.liyan.coursetable"
+    android:versionCode="7"
+    android:versionName="0.7">
+
+    <!-- OPPO 手表规范：声明为手表应用 -->
+    <uses-feature
+        android:name="android.hardware.type.watch"
+        android:required="true" />
+
+    <uses-sdk
+        android:minSdkVersion="27"
+        android:targetSdkVersion="29" />
+
+    <!-- 读取 / 写入 /sdcard/CourseTableWatch/course.json（targetSdk 29 + legacy 存储） -->
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+
+    <!--
+      课前提醒：把课程写进系统日历，由「日历 Provider」这个系统应用去排
+      EVENT_REMINDER 闹钟。这样绕开了 ColorOS 对第三方 App 自设 wakeup 闹钟的
+      拦截（forbin thirdapp ... set wakeup alarm），息屏下也能正常提醒，
+      而且 App 不需要常驻后台。
+    -->
+    <uses-permission android:name="android.permission.READ_CALENDAR" />
+    <uses-permission android:name="android.permission.WRITE_CALENDAR" />
+
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!--
+      从手机接收课表：经典蓝牙 RFCOMM 直连。
+      手表和手机本来就是已配对状态（手表以 HFP 客户端角色连着手机），
+      所以这里只需要基本蓝牙权限，不需要重新配对，也不依赖蓝牙网络代理。
+    -->
+    <uses-permission android:name="android.permission.BLUETOOTH" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
+
+    <application
+        android:allowBackup="false"
+        android:icon="@drawable/ic_launcher"
+        android:label="@string/app_name"
+        android:requestLegacyExternalStorage="true"
+        android:supportsRtl="false"
+        android:theme="@style/AppTheme">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:theme="@style/AppTheme">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <receiver
+            android:name=".ReminderReceiver"
+            android:exported="false" />
+
+        <!--
+          接收系统日历 Provider 的 EVENT_REMINDER 广播。
+          闹钟由系统应用 com.android.providers.calendar 排，不触发 ColorOS
+          对「第三方 App 自设 wakeup 闹钟」的拦截；该广播属于 Android 8.0+
+          隐式广播豁免清单，可以静态注册。必须带 content scheme 才匹配得到
+          （intent 的 data 是 content://com.android.calendar/<alertTime>）。
+        -->
+        <receiver
+            android:name=".EventReminderReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.EVENT_REMINDER" />
+                <data android:scheme="content" />
+            </intent-filter>
+        </receiver>
+
+        <receiver
+            android:name=".BootReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+            </intent-filter>
+        </receiver>
+
+    </application>
+
+</manifest>

@@ -1,0 +1,22 @@
+# 换行符统一成 LF 存进仓库。
+# 这条不是为了好看：`gradlew` 是 sh 脚本，如果带着 CRLF 被 clone 到
+# Linux / macOS，执行时会直接报
+#   /usr/bin/env: 'sh\r': No such file or directory
+# 所以脚本类一律锁死 LF。Windows 的 .bat 反过来必须是 CRLF。
+* text=auto eol=lf
+
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# 二进制文件不要做任何换行转换
+*.jar binary
+*.png binary
+*.jpg binary
+*.webp binary
+*.apk binary
+*.aab binary
+*.keystore binary
+*.jks binary
+
+# 生成物 / 锁文件压掉，避免 diff 噪音
+*.pyc binary

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 启动闪屏底色，取默认主题（极夜黑）的页面底色，避免白闪 -->
+    <color name="window_bg">#FF0A0A0C</color>
+    <!-- 图标底色：与手表端 ic_launcher.xml 的圆底同一个绿 -->
+    <color name="ic_launcher_background">#FF1B5E20</color>
+</resources>

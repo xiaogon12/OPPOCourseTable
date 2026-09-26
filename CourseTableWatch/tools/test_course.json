@@ -1,0 +1,25 @@
+{
+  "name": "测试导入课表",
+  "startDate": "2026-09-21",
+  "totalWeeks": 16,
+  "pc": [4, 4, 0],
+  "ps": ["08:10", "14:10", "19:00"],
+  "dt": 50,
+  "periodTimes": [
+    {"period": 1, "start": "08:10", "end": "09:00"},
+    {"period": 2, "start": "09:10", "end": "10:00"},
+    {"period": 3, "start": "10:20", "end": "11:10"},
+    {"period": 4, "start": "11:20", "end": "12:10"},
+    {"period": 5, "start": "14:10", "end": "15:00"},
+    {"period": 6, "start": "15:10", "end": "16:00"},
+    {"period": 7, "start": "16:20", "end": "17:10"},
+    {"period": 8, "start": "17:20", "end": "18:10"}
+  ],
+  "courses": [
+    {"name": "离散数学", "teacher": "刘老师", "room": "A座301", "className": "计算机2班", "dayOfWeek": 4, "startPeriod": 1, "endPeriod": 2, "weeks": [1,2,3,4,5,6,7,8]},
+    {"name": "数据结构", "teacher": "陈老师", "room": "A座205", "className": "计算机2班", "dayOfWeek": 4, "startPeriod": 3, "endPeriod": 3, "weeks": "1-16"},
+    {"name": "大学物理", "teacher": "吴老师", "room": "B座102", "className": "计算机2班", "dayOfWeek": 4, "startPeriod": 4, "endPeriod": 4, "weeks": "1-16"},
+    {"name": "操作系统", "teacher": "郑老师", "room": "A座401", "className": "计算机2班", "dayOfWeek": 4, "startPeriod": 5, "endPeriod": 6, "weeks": [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16]},
+    {"name": "软件工程", "teacher": "黄老师", "room": "A座302", "className": "计算机2班", "dayOfWeek": 5, "startPeriod": 1, "endPeriod": 2, "weeks": [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16]}
+  ]
+}

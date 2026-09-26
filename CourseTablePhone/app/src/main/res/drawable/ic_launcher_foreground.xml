@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  与手表端 app/src/main/res/drawable/ic_launcher.xml 同款：
+  同一套图形语言 —— 深绿底 + 浅绿标题条 + 三条课程横线（最后一条短）。
+
+  这里只画「前景」，绿底那层是 colors.xml 的 ic_launcher_background；
+  坐标收在自适应图标的安全区（以 54,54 为心、半径 33 的圆）以内，
+  这样无论被裁成圆形、圆角方形还是方形，内容都不会被切到。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- 标题条 -->
+    <path
+        android:fillColor="#A5D6A7"
+        android:pathData="M35,32 h38 a3,3 0 0,1 3,3 v3 a3,3 0 0,1 -3,3 h-38 a3,3 0 0,1 -3,-3 v-3 a3,3 0 0,1 3,-3 z" />
+
+    <!-- 课程行 1 -->
+    <path
+        android:fillColor="#E8F5E9"
+        android:pathData="M34.5,45 h39 a2.5,2.5 0 0,1 2.5,2.5 v3 a2.5,2.5 0 0,1 -2.5,2.5 h-39 a2.5,2.5 0 0,1 -2.5,-2.5 v-3 a2.5,2.5 0 0,1 2.5,-2.5 z" />
+
+    <!-- 课程行 2 -->
+    <path
+        android:fillColor="#E8F5E9"
+        android:pathData="M34.5,57 h39 a2.5,2.5 0 0,1 2.5,2.5 v3 a2.5,2.5 0 0,1 -2.5,2.5 h-39 a2.5,2.5 0 0,1 -2.5,-2.5 v-3 a2.5,2.5 0 0,1 2.5,-2.5 z" />
+
+    <!-- 课程行 3（短，收尾用） -->
+    <path
+        android:fillColor="#81C784"
+        android:pathData="M34.5,69 h19 a2.5,2.5 0 0,1 2.5,2.5 v3 a2.5,2.5 0 0,1 -2.5,2.5 h-19 a2.5,2.5 0 0,1 -2.5,-2.5 v-3 a2.5,2.5 0 0,1 2.5,-2.5 z" />
+
+</vector>
