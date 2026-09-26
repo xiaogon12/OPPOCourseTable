@@ -18,6 +18,7 @@ import android.text.TextUtils;
 import android.util.Log;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Calendar;
 import java.util.List;
 import java.util.TimeZone;
@@ -59,11 +60,23 @@ public final class CalendarSync {
 
     private static final String PREFS = "ctw_calendar";
     private static final String KEY_IDS = "event_ids";
+    private static final String KEY_LAST_AT = "last_at";
+    private static final String KEY_LAST_SIG = "last_sig";
 
     /** 上一次同步的时间戳，用来防抖（onCreate + onResume 会连着调两次） */
     private static long sLastSyncAt = 0L;
     private static String sLastSig = null;
     private static final long MIN_INTERVAL = 15000L;
+
+    /**
+     * 跨进程的免重写窗口。
+     *
+     * <p>每次打开 App 都删掉再重写几十条日历事件，是要跑上百次 ContentResolver
+     * 调用的，实测 1.26 秒——放在启动路径上就是开屏黑屏一两秒。
+     * 而写进去的是「未来 14 天」的窗口，内容没变就没必要重写，
+     * 所以数据没变时只按这个间隔兜底重刷一次。
+     */
+    private static final long PERSIST_INTERVAL = 12 * 60 * 60 * 1000L;
 
     /** 影响日历内容的设置指纹，用来判断「设置有没有变」 */
     private static String signature(AppConfig cfg) {
@@ -72,6 +85,21 @@ public final class CalendarSync {
                 + "|" + cfg.periodCount[0] + "," + cfg.periodCount[1] + "," + cfg.periodCount[2]
                 + "|" + cfg.sectionStart[0] + "," + cfg.sectionStart[1] + "," + cfg.sectionStart[2]
                 + "|" + cfg.periodMinutes + "|" + cfg.breakMinutes + "|" + cfg.bigBreakMinutes;
+    }
+
+    /**
+     * 课表本身的指纹。
+     * 设置没变但手机推了一份新课表过来时，日历也必须跟着重写，所以要把课程也算进来。
+     */
+    private static String dataSig(Context c) {
+        List<Course> list = Store.get(c).snapshot();
+        StringBuilder sb = new StringBuilder();
+        for (Course co : list) {
+            sb.append(co.dayOfWeek).append(',').append(co.startPeriod).append(',')
+                    .append(co.endPeriod).append(',').append(Arrays.hashCode(co.weeks)).append(',')
+                    .append(co.name).append('|');
+        }
+        return list.size() + "#" + Integer.toHexString(sb.toString().hashCode());
     }
 
     private CalendarSync() {
@@ -140,16 +168,31 @@ public final class CalendarSync {
             return -1;
         }
         AppConfig cfg = Store.get(c).config;
-        // 防抖：设置没变、又刚刚同步过，就不重复清写日历。
-        // （onCreate 与 onResume 会连着各调一次）
+        // 防抖，两层：
+        //   1. 内存里 15 秒 —— onCreate 与 onResume 会连着各调一次；
+        //   2. 落盘 12 小时 —— 冷启动时新进程的内存计数是空的，光靠第 1 层
+        //      会导致每次打开 App 都把日历整个重写一遍（实测 1.26 秒）。
+        SharedPreferences sp = c.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        if (sLastSyncAt == 0L) {
+            sLastSyncAt = sp.getLong(KEY_LAST_AT, 0L);
+            sLastSig = sp.getString(KEY_LAST_SIG, null);
+        }
         long nowAt = System.currentTimeMillis();
-        String sig = signature(cfg);
-        if (sig.equals(sLastSig) && nowAt - sLastSyncAt < MIN_INTERVAL) {
-            Log.i(TAG, "日历同步: 设置没变且刚同步过，跳过");
-            return lastCount(c);
+        String sig = signature(cfg) + "||" + dataSig(c);
+        if (sig.equals(sLastSig) && lastCount(c) > 0) {
+            long gap = sLastSyncAt == 0L ? Long.MAX_VALUE : nowAt - sLastSyncAt;
+            if (gap < MIN_INTERVAL) {
+                Log.i(TAG, "日历同步: 设置没变且刚同步过，跳过");
+                return lastCount(c);
+            }
+            if (gap < PERSIST_INTERVAL) {
+                Log.i(TAG, "日历同步: 数据没变，跳过重写（" + (gap / 60000) + " 分钟前已同步）");
+                return lastCount(c);
+            }
         }
         sLastSig = sig;
         sLastSyncAt = nowAt;
+        sp.edit().putString(KEY_LAST_SIG, sig).putLong(KEY_LAST_AT, nowAt).apply();
         clear(c);
         if (!cfg.reminderOn) {
             Log.i(TAG, "日历同步: 提醒已关闭，只做了清理");
@@ -162,6 +205,8 @@ public final class CalendarSync {
 
         TimeTable tt = new TimeTable(cfg);
         Store store = Store.get(c);
+        // 后台线程读，用快照——课表随时可能被手机推过来整体替换
+        List<Course> snapshot = store.snapshot();
         Calendar now = Calendar.getInstance();
         String tz = TimeZone.getDefault().getID();
         List<Long> ids = new ArrayList<>();
@@ -171,7 +216,7 @@ public final class CalendarSync {
             Calendar day = (Calendar) now.clone();
             day.add(Calendar.DAY_OF_MONTH, d);
             int week = Weeks.weekOf(cfg, day);
-            List<Course> list = store.ofDay(Weeks.dowOf(day), week);
+            List<Course> list = store.ofDayOf(snapshot, Weeks.dowOf(day), week);
             for (Course co : list) {
                 long start = at(day, tt.start(co.startPeriod));
                 long end = at(day, tt.end(co.endPeriod));
@@ -222,7 +267,9 @@ public final class CalendarSync {
 
     /** 忽略防抖，强制同步一次（界面上点「重新同步」时用） */
     public static int syncNow(Context c) {
-        sLastSyncAt = 0L;
+        // -1 而不是 0：0 是「新进程、还没读过落盘记录」的标记，会被 sync() 重新加载覆盖掉
+        sLastSyncAt = -1L;
+        sLastSig = null;
         return sync(c);
     }
 

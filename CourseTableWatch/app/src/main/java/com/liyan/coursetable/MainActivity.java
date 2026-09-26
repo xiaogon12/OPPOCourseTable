@@ -85,23 +85,65 @@ public class MainActivity extends Activity implements Host {
         getWindow().setBackgroundDrawable(new ColorDrawable(palette.bg));
         buildUi();
 
-        Reminder.ensureChannel(this);
-        Reminder.schedule(this);
+        // 杂活一律不放在启动路径上。
+        // 之前 Reminder.schedule() 直接在 onCreate 里跑，它会同步写系统日历
+        // （上百次 ContentResolver 调用，实测 1.26 秒），
+        // 结果是每打开一次 App 就黑屏一两秒。
+        postBackgroundWork();
 
         requestStorage();
         handleDebugIntent(getIntent());
     }
 
+    /** 第一帧之后开一个后台线程做提醒排程，主线程一步都不等 */
+    private void postBackgroundWork() {
+        final Context app = getApplicationContext();
+        handler.post(new Runnable() {
+            @Override
+            public void run() {
+                Thread t = new Thread("reminder-bg") {
+                    @Override
+                    public void run() {
+                        try {
+                            Reminder.ensureChannel(app);
+                            Reminder.schedule(app);
+                        } catch (Exception e) {
+                            Log.w("CourseTable", "后台排程失败: " + e);
+                        }
+                    }
+                };
+                // 比普通优先级再低一点，不跟界面抢 CPU
+                t.setPriority(Thread.MIN_PRIORITY + 1);
+                t.start();
+            }
+        });
+    }
+
     /**
-     * 把「直接打开接收页」也做成一个 adb 参数，和上面的 now_offset 一样只服务调试：
-     *   adb shell am start -n com.liyan.coursetable/.MainActivity --ez receive true
+     * 只服务调试、正常启动完全不走的两个 adb 参数：
+     * <pre>
+     *   --ez receive true   直接把「从手机接收」打开
+     *   --ez restore true   从 /sdcard 的副本恢复课表
+     * </pre>
      *
-     * 为什么需要它：这台手表充电时会被 OPPO 的 HeySecurity 全屏悬浮窗盖住，
-     * 触摸事件进不来，自动化没法点「从手机接收」。走 am start 就不受悬浮窗影响。
-     * 正常从表盘/菜单启动时没有这个参数，流程完全不变。
+     * 为什么需要 receive：这台手表充电时会被 OPPO 的 HeySecurity 全屏悬浮窗盖住，
+     * 触摸事件进不来，自动化没法点按钮。走 am start 就不受悬浮窗影响。
+     * 从表盘/菜单启动时没有这些参数，流程完全不变。
      */
     private void handleDebugIntent(Intent intent) {
-        if (intent == null || !intent.getBooleanExtra("receive", false)) {
+        if (intent == null) {
+            return;
+        }
+        if (intent.getBooleanExtra("restore", false)) {
+            intent.removeExtra("restore");
+            int n = Store.get(this).restoreFromBackup(this);
+            toast(n > 0 ? "已从副本恢复 " + n + " 门课" : "副本读取失败");
+            if (n > 0) {
+                configChanged(true);
+            }
+            return;
+        }
+        if (!intent.getBooleanExtra("receive", false)) {
             return;
         }
         intent.removeExtra("receive");
@@ -125,7 +167,7 @@ public class MainActivity extends Activity implements Host {
         super.onResume();
         handler.removeCallbacks(refreshTask);
         handler.post(refreshTask);
-        Reminder.schedule(this);
+        postBackgroundWork();
     }
 
     @Override
@@ -576,12 +618,27 @@ public class MainActivity extends Activity implements Host {
 
     @Override
     public void requestCalendar() {
-        if (CalendarSync.hasPermission(this)) {
-            int n = CalendarSync.syncNow(this);
-            toast(n >= 0 ? "已写入 " + n + " 条课程提醒到系统日历" : "同步失败：找不到可写的日历");
+        if (!CalendarSync.hasPermission(this)) {
+            requestStorage();
             return;
         }
-        requestStorage();
+        // 写日历要 1 秒以上，别卡着界面等；写完再把结果弹出来
+        final Context app = getApplicationContext();
+        Thread t = new Thread(new Runnable() {
+            @Override
+            public void run() {
+                final int n = CalendarSync.syncNow(app);
+                handler.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        toast(n >= 0 ? "已写入 " + n + " 条课程提醒到系统日历"
+                                : "同步失败：找不到可写的日历");
+                    }
+                });
+            }
+        }, "calendar-sync");
+        t.setPriority(Thread.MIN_PRIORITY + 1);
+        t.start();
     }
 
     @Override

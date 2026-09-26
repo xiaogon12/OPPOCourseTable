@@ -90,8 +90,23 @@ public final class Store {
 
     /** 某一天、某一周的课程，按开始节次升序 */
     public List<Course> ofDay(int dayOfWeek, int week) {
+        return ofDayOf(snapshot(), dayOfWeek, week);
+    }
+
+    /**
+     * 课表快照。
+     *
+     * <p>课表只在主线程被整体替换（蓝牙推送），后台线程（日历同步）读的时候
+     * 拿一份副本，避免读到一半列表被换掉。
+     */
+    public List<Course> snapshot() {
+        return new ArrayList<>(courses);
+    }
+
+    /** 在给定快照上按天查询（遍历副本，不碰实时的 {@link #courses}） */
+    public List<Course> ofDayOf(List<Course> snapshot, int dayOfWeek, int week) {
         List<Course> r = new ArrayList<>();
-        for (Course c : courses) {
+        for (Course c : snapshot) {
             if (c.dayOfWeek == dayOfWeek && c.hasWeek(week)) {
                 r.add(c);
             }
@@ -289,9 +304,32 @@ public final class Store {
         return r;
     }
 
-    /** 把 JSON 也留一份到共享目录，方便下次在手表上直接改 */
-    private void writeSharedCopy(Context ctx, String json) {
+    /**
+     * 从共享目录里的那份副本恢复课表，成功返回门数，失败返回 -1。
+     *
+     * <p>每次保存都会往 {@code /sdcard/CourseTableWatch/course.json} 回写一份，
+     * 所以清数据（{@code pm clear}）、换表之后想快速把课表弄回来时可以用它。
+     * 只走 adb，没有界面入口：
+     * <pre>adb shell am start -n com.liyan.coursetable/.MainActivity --ez restore true</pre>
+     */
+    public int restoreFromBackup(Context ctx) {
+        File f = sharedFile();
+        String json = f == null ? null : readFile(f);
+        if (json == null || json.trim().isEmpty()) {
+            return -1;
+        }
         try {
+            // persist=true：连设置一起恢复，等价于一次正常导入
+            Result r = applyJson(json, ctx, true);
+            return r.count;
+        } catch (Exception e) {
+            Log.w(TAG, "从副本恢复失败: " + e);
+            return -1;
+        }
+    }
+
+    /** 把 JSON 也留一份到共享目录，方便下次在手表上直接改 */
+    private void writeSharedCopy(Context ctx, String json) {        try {
             File dir = sharedDir();
             if (dir == null) {
                 return;

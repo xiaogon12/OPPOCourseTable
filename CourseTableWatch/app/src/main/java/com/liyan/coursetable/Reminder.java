@@ -8,6 +8,7 @@ import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
 import android.os.Build;
+import android.os.Looper;
 import android.util.Log;
 
 import java.util.Calendar;
@@ -146,15 +147,47 @@ public final class Reminder {
         return null;
     }
 
+    /** 串行执行，避免连续改设置时几个线程同时重写日历 */
+    private static final java.util.concurrent.ExecutorService POOL =
+            java.util.concurrent.Executors.newSingleThreadExecutor(
+                    new java.util.concurrent.ThreadFactory() {
+                        @Override
+                        public Thread newThread(Runnable r) {
+                            Thread t = new Thread(r, "reminder-schedule");
+                            t.setPriority(Thread.MIN_PRIORITY + 1);
+                            return t;
+                        }
+                    });
+
     /**
      * 重新安排提醒（每次设置变化 / 打开 App 都要调）。
+     *
+     * <p>在主线程调用时自动丢到后台线程去做，主线程一步都不等——同步日历
+     * 要跑上百次 ContentResolver 调用，实测 1.26 秒，放在主线程上就是黑屏 / 卡顿。
+     * 已经在后台线程调用时就地执行（例如 Receiver 里），省一次线程切换。
      *
      * <p>首选：把课程写进系统日历，让日历 Provider 去排 EVENT_REMINDER 闹钟
      * —— 系统应用排的闹钟在息屏下也会被投递，而且到点会把 App 拉起来发通知。
      * <p>没有日历权限时退回应用闹钟（实测息屏下会被 ColorOS 拦截，只在亮屏可靠）。
      */
     public static void schedule(Context c) {
-        if (CalendarSync.hasPermission(c)) {
+        final Context app = c.getApplicationContext();
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            POOL.execute(new Runnable() {
+                @Override
+                public void run() {
+                    scheduleNow(app);
+                }
+            });
+        } else {
+            scheduleNow(app);
+        }
+    }
+
+    private static void scheduleNow(Context c) {
+        boolean cal = CalendarSync.hasPermission(c);
+        Log.i(TAG, "排程: 日历权限=" + cal + "，课表 " + Store.get(c).courses.size() + " 门");
+        if (cal) {
             int n = CalendarSync.sync(c);
             if (n >= 0) {
                 cancelAlarm(c);
