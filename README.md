@@ -8,7 +8,7 @@
 
 没有账号，没有服务端，**不联网**。课表只在你自己这两台设备之间通过蓝牙走。
 
-![手机端课表](docs/screenshots/phone-courses.png)
+![手机端课表](main/docs%2Fscreenshots%2Fphone-courses.png)
 
 ## 下载安装
 
