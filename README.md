@@ -8,7 +8,7 @@
 
 没有账号，没有服务端，**不联网**。课表只在你自己这两台设备之间通过蓝牙走。
 
-![手机端课表](docs%2Fscreenshots%2Fphone-courses.png)
+![手机端课表](docs/screenshots/phone-courses.png)
 
 ## 下载安装
 
@@ -17,7 +17,7 @@
 | 文件 | 装到哪 | 怎么装 |
 | --- | --- | --- |
 | `app-release.apk` | 手机（Android 8.0 以上） | 传进手机，**点开就装**（提示「未知来源」时允许一次） |
-| `CourseTableWatch.apk` | 手表（OPPO Watch X2） | 手表上没有能点开 APK 的安装界面，用数据线连电脑，电脑安装adb工具，手表进设置-关于手表-版本信息-连续点击版本号，开启开发者，然后在开发者开启usb调试 `adb install CourseTableWatch.apk` |
+| `CourseTableWatch.apk` | 手表（OPPO Watch X2） | 手表上没有能点开 APK 的安装界面。用数据线连电脑，电脑装好 adb 工具；手表进「设置 → 关于手表 → 版本信息」，连续点击版本号开启开发者，再在开发者选项里打开 USB 调试；然后 `adb install CourseTableWatch.apk` |
 
 手表上也能拿到下载地址：**手表 →「我的」→「从手机接收」→「显示下载二维码（全屏）」**，用手机扫一下。
 
@@ -44,38 +44,42 @@ cd CourseTableWatch
 python tools/build.py --install
 ```
 
-# 感谢AI，让什么都不懂的人可以做应用
-做这个项目本身是身为大学生，课程表非常重要，所以开发这个项目
+> 两头都请构建 release，不要用 debug 包。
+
+## 感谢 AI，让什么都不懂的人也可以做应用
+
+做这个项目本身是身为大学生，课程表非常重要，所以开发这个项目。
 
 ## 声明
 
-- **MIT 许可**，全文见下方。。
-- **不联网、不收集任何信息、不上传任何数据。** 手机端要蓝牙权限只是为了和手表直连传JSON，
+- **不联网、不收集任何信息、不上传任何数据。** 手机端要蓝牙权限只是为了和手表直连传 JSON，
+  没有统计 SDK、没有崩溃上报、没有广告。
 - 个人项目，**和 OPPO / ColorOS 官方无关**，也不是 Wear OS 应用。
   只在 OPPO Watch X2（OWW251，ColorOS Watch 16.0.0）上实测过。
+- 作者 **xiaogon12**，仓库 <https://github.com/xiaogon12/OPPOCourseTable>。
+  软件里带着作者的署名，请不要删掉它。
 
-## 许可 · MIT License
+## 许可 · CC BY-NC-SA 4.0
 
-```
-MIT License
+**署名—非商业性使用—相同方式共享 4.0 国际**（Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International）。
 
-Copyright (c) 2026 xiaogon12
+| | |
+| --- | --- |
+| ✅ 可以 | 免费用；随意改；原样或改版后再发布；在自己学校 / 社团内部分享 |
+| ❌ 不可以 | 卖钱；任何盈利用途（含广告变现、付费下载、捆绑销售）；去掉作者署名当成自己的作品；改版后换成闭源或商业许可 |
+| 必须 | 保留作者署名与本仓库地址；改版发布必须沿用本协议 |
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+一句话：**随便用、随便改、随便传，就是不能拿去赚钱，也不能把署名抹了当自己的。**
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+许可全文（官方英文法律文本，未作修改）见仓库根目录 [`LICENSE`](LICENSE)。
+中文摘要 <https://creativecommons.org/licenses/by-nc-sa/4.0/deed.zh>
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-```
+### 关于「套壳」
+
+把这个 App 换个图标、改个名字、或者套一层壳重新打包发布 —— 都是 **不允许** 的：
+
+- 去掉或隐藏软件内的作者署名、仓库地址、许可声明，视为违反署名条款；
+- 把本项目的代码（含改版）放进任何应用商店、付费群、网盘资源包卖钱，视为违反非商业条款；
+- 改版后闭源、或者换成 MIT / 商业许可发布，视为违反相同方式共享条款。
+
+已经发现违规使用，请联系作者。

@@ -1,5 +1,14 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+#
+# 课程表 · OPPO Watch X2
+# Copyright (c) 2026 xiaogon12
+# https://github.com/xiaogon12/OPPOCourseTable
+#
+# 许可：CC BY-NC-SA 4.0（署名—非商业性使用—相同方式共享）
+#   可以免费用、随意改、原样或改版再发布；不可以商用、盈利；
+#   不可以移除本署名后重新发布。完整条款见仓库根目录 LICENSE。
+#
 """
 手表 UI 调试小工具（比截图可靠：截图在 OPPO 手表上会返回缓存帧）。
 

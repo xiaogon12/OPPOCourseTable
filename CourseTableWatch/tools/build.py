@@ -1,5 +1,14 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+#
+# 课程表 · OPPO Watch X2
+# Copyright (c) 2026 xiaogon12
+# https://github.com/xiaogon12/OPPOCourseTable
+#
+# 许可：CC BY-NC-SA 4.0（署名—非商业性使用—相同方式共享）
+#   可以免费用、随意改、原样或改版再发布；不可以商用、盈利；
+#   不可以移除本署名后重新发布。完整条款见仓库根目录 LICENSE。
+#
 """
 OPPO Watch 课程表 —— 极简构建脚本
 
@@ -41,8 +50,8 @@ MIN_SDK = "27"
 TARGET_SDK = "29"
 # 版本号唯一来源：aapt2 link 的这两个参数会覆盖 AndroidManifest.xml 里的同名属性，
 # 所以改版本只改这里（清单里的值只是为了让人看代码时不困惑，保持一致即可）。
-VERSION_CODE = "8"
-VERSION_NAME = "0.7.1"
+VERSION_CODE = "9"
+VERSION_NAME = "0.8.0"
 APK_NAME = "CourseTableWatch.apk"
 
 ADB_FALLBACK = Path(r"E:\platform-tools\adb.exe")
@@ -168,6 +177,34 @@ def ensure_keystore(java_home):
     ])
 
 
+# ---------------------------------------------------------------- 水印自检
+
+# 出处水印（见根目录 LICENSE / README「关于套壳」）。故意做成两处冗余：
+# classes.dex 的常量池（源码里的字面量）和 resources.arsc 的字符串池（strings.xml）。
+WATERMARK_NEEDLE = "xiaogon12"
+
+
+def check_watermark(apk):
+    """确认出处水印真的打进了包里，返回命中的构件名。
+
+    ASCII 串在 arsc 里可能被存成 UTF-8 也可能被存成 UTF-16（整个字符串含非 ASCII
+    字符时会切成 UTF-16），所以两种编码都要试。
+    """
+    needles = [
+        WATERMARK_NEEDLE.encode("utf-8"),
+        WATERMARK_NEEDLE.encode("utf-16-le"),
+    ]
+    hits = []
+    with zipfile.ZipFile(apk) as z:
+        for name in z.namelist():
+            if not (name.endswith(".dex") or name == "resources.arsc"):
+                continue
+            data = z.read(name)
+            if any(n in data for n in needles):
+                hits.append(name)
+    return hits
+
+
 # ---------------------------------------------------------------- 主流程
 
 def build():
@@ -284,6 +321,13 @@ def build():
 
     run([java, "-jar", apksigner_jar, "verify", "--print-certs", signed],
         "校验签名")
+
+    hits = check_watermark(signed)
+    if hits:
+        print(f"\n    水印自检：在 {'、'.join(hits)} 里找到出处标记 「{WATERMARK_NEEDLE}」")
+    else:
+        print(f"\n    [注意] 水印自检：{signed.name} 里没找到出处标记 "
+              f"「{WATERMARK_NEEDLE}」—— 检查 strings.xml 与源码里的署名是否被删掉了")
 
     size_kb = signed.stat().st_size / 1024
     print("\n" + "=" * 68)

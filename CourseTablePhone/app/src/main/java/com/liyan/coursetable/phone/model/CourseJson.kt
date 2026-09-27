@@ -1,3 +1,14 @@
+/*
+ * 课程表 · OPPO Watch X2
+ * Copyright (c) 2026 xiaogon12
+ * https://github.com/xiaogon12/OPPOCourseTable
+ *
+ * 许可：CC BY-NC-SA 4.0（署名—非商业性使用—相同方式共享）
+ *   · 可以免费用、随意改、原样或改版再发布
+ *   · 不可以商用、盈利，不可以移除本署名后重新发布
+ *   · 改版发布必须沿用同一许可
+ * 完整条款见仓库根目录 LICENSE。
+ */
 package com.liyan.coursetable.phone.model
 
 import org.json.JSONArray
@@ -357,6 +368,10 @@ object CourseJson {
      *
      * 顶层就是规范 `course.json`（旧版手表端只读顶层，天然兼容），
      * 额外挂一个 `settings` 对象承载课表之外的设置项（周次修正 / 提醒 / 主题等）。
+     *
+     * `_via` / `_license` 是出处水印：数据流本身带着项目来源，
+     * 抹掉界面上署名也没法把这份数据说成自己的。手表端按字符串键精确取值，
+     * 这两个字段会被忽略，不影响导入。
      */
     fun buildPayload(table: CourseTable): String {
         val s = table.settings
@@ -366,6 +381,8 @@ object CourseJson {
             "generatedAt",
             LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")),
         )
+        root.put("_via", VIA)
+        root.put("_license", LICENSE_NAME)
         root.put("settings", JSONObject().apply {
             put("weekOffset", s.weekOffset)
             put("sameLength", s.sameLength)
@@ -378,6 +395,10 @@ object CourseJson {
     }
 
     const val PROTOCOL = 1
+
+    /** 出处水印，见 [buildPayload] */
+    const val VIA = "xiaogon12/OPPOCourseTable"
+    const val LICENSE_NAME = "CC BY-NC-SA 4.0"
 
     // ------------------------------------------------------------ 解析细节
 

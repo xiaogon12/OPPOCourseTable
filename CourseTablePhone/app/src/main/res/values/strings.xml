@@ -1,4 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">课程表</string>
+
+    <!--
+      出处水印，不参与界面显示，仅为让反编译 / aapt2 dump 时能查到出处。
+      详见根目录 LICENSE（CC BY-NC-SA 4.0）与 README「关于套壳」一节。请勿删除。
+    -->
+    <string name="watermark_origin" translatable="false">OPPOCourseTable by xiaogon12 · https://github.com/xiaogon12/OPPOCourseTable</string>
+    <string name="watermark_license" translatable="false">CC BY-NC-SA 4.0 · 禁止商业使用 · 禁止去除署名</string>
 </resources>

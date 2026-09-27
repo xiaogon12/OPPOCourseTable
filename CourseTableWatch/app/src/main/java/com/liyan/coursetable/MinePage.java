@@ -1,3 +1,14 @@
+/*
+ * 课程表 · OPPO Watch X2
+ * Copyright (c) 2026 xiaogon12
+ * https://github.com/xiaogon12/OPPOCourseTable
+ *
+ * 许可：CC BY-NC-SA 4.0（署名—非商业性使用—相同方式共享）
+ *   · 可以免费用、随意改、原样或改版再发布
+ *   · 不可以商用、盈利，不可以移除本署名后重新发布
+ *   · 改版发布必须沿用同一许可
+ * 完整条款见仓库根目录 LICENSE。
+ */
 package com.liyan.coursetable;
 
 import android.graphics.Typeface;
@@ -206,5 +217,14 @@ public class MinePage extends FrameLayout {
                         Sheets.themeSheet(host);
                     }
                 }));
+
+        // 8. 出处署名。
+        // 不是装饰：CC BY-NC-SA 4.0 要求保留作者署名，谁要把它换成自己的名字，
+        // 就必须动源码重新编译（反编译改 dex 里的字符串同样绕不过去）。
+        // 细节见仓库根目录 LICENSE 与 README「关于套壳」。
+        TextView sign = Ui.caption(host.ctx(),
+                "© 2026 xiaogon12 · CC BY-NC-SA 4.0", 9f, p.textFaint);
+        sign.setPadding(0, Ui.dp(host.ctx(), 14), 0, 0);
+        listBox.addView(sign);
     }
 }

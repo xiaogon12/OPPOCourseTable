@@ -1,3 +1,14 @@
+/*
+ * 课程表 · OPPO Watch X2
+ * Copyright (c) 2026 xiaogon12
+ * https://github.com/xiaogon12/OPPOCourseTable
+ *
+ * 许可：CC BY-NC-SA 4.0（署名—非商业性使用—相同方式共享）
+ *   · 可以免费用、随意改、原样或改版再发布
+ *   · 不可以商用、盈利，不可以移除本署名后重新发布
+ *   · 改版发布必须沿用同一许可
+ * 完整条款见仓库根目录 LICENSE。
+ */
 package com.liyan.coursetable.phone.ui
 
 import android.content.Context
@@ -312,6 +323,21 @@ class AppState(private val app: Context, val store: Store) {
          */
         const val REPO_URL = "https://github.com/xiaogon12/OPPOCourseTable"
         const val RELEASES_URL = "$REPO_URL/releases/latest"
-        const val LICENSE_NAME = "MIT"
+        const val LICENSE_NAME = "CC BY-NC-SA 4.0"
+        const val LICENSE_URL = "https://creativecommons.org/licenses/by-nc-sa/4.0/"
+        const val AUTHOR = "xiaogon12"
+
+        /**
+         * 出处水印。
+         *
+         * 不是装饰 —— 它会被写进三处，目的是让「抹掉出处重新发布」这件事有成本：
+         *  1. 打包进 APK 的常量池（`strings` / `aapt2 dump` 能直接搜到）；
+         *  2. 显示在「关于」面板上（要删得先改代码，不能只换个图标）；
+         *  3. 每次蓝牙推送的 JSON 负载里（`_via` 字段，数据流本身带着来源）。
+         *
+         * 手表端 `Store.java` 只按字符串键精确取值，多出来的字段会被自然忽略，
+         * 所以加这个不会影响和旧版本的兼容。
+         */
+        const val WATERMARK = "OPPOCourseTable by xiaogon12 · CC BY-NC-SA 4.0"
     }
 }

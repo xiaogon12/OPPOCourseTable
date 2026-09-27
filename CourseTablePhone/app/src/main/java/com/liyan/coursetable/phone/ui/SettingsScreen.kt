@@ -1,3 +1,14 @@
+/*
+ * 课程表 · OPPO Watch X2
+ * Copyright (c) 2026 xiaogon12
+ * https://github.com/xiaogon12/OPPOCourseTable
+ *
+ * 许可：CC BY-NC-SA 4.0（署名—非商业性使用—相同方式共享）
+ *   · 可以免费用、随意改、原样或改版再发布
+ *   · 不可以商用、盈利，不可以移除本署名后重新发布
+ *   · 改版发布必须沿用同一许可
+ * 完整条款见仓库根目录 LICENSE。
+ */
 package com.liyan.coursetable.phone.ui
 
 import android.content.Intent
@@ -318,9 +329,12 @@ fun SettingsScreen(state: AppState) {
 /**
  * 「关于 / 声明」面板。
  *
- * 开源软件该把三件事说清楚：这是什么、代码在哪、数据去哪了。
+ * 开源软件该把四件事说清楚：这是什么、谁写的、代码在哪、数据去哪了。
  * 最后一条对这类要蓝牙、要读课表的 App 尤其重要 —— 所以直接把「不联网」写出来，
  * 而不是留给用户去猜。
+ *
+ * 这里的作者署名和底部的出处水印**是有意留在界面上的**：
+ * 许可要求保留署名，谁要把它换成自己的名字，就得动代码而不是换个图标。
  */
 @Composable
 private fun AboutPanel() {
@@ -330,10 +344,15 @@ private fun AboutPanel() {
     Panel {
         PanelTitle("关于")
         KeyValue("应用", "课程表 v${BuildConfig.VERSION_NAME}")
-        KeyValue("许可证", AppState.LICENSE_NAME)
+        KeyValue("作者", AppState.AUTHOR)
+        KeyValue("许可证", AppState.LICENSE_NAME, valueColor = p.accent)
         Spacer(Modifier.height(4.dp))
         Hint(
-            "开源软件（MIT 许可）。不联网、不收集任何信息、不上传任何数据：" +
+            "开源软件（${AppState.LICENSE_NAME}）。免费用、随便改、可以再发布，" +
+                "但不能拿去卖钱，也不能删掉作者署名当成自己的作品。",
+        )
+        Hint(
+            "不联网、不收集任何信息、不上传任何数据：" +
                 "课表只在你自己的手机和手表之间通过蓝牙传输。",
         )
         Spacer(Modifier.height(10.dp))
@@ -342,24 +361,40 @@ private fun AboutPanel() {
                 copyToClipboard(context, AppState.REPO_URL, "开源仓库地址")
             }
             ActionButton("打开仓库", primary = true, modifier = Modifier.weight(1f)) {
-                val opened = runCatching {
-                    context.startActivity(
-                        Intent(Intent.ACTION_VIEW, Uri.parse(AppState.REPO_URL))
-                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-                    )
-                }.isSuccess
-                // 没浏览器就把地址塞进剪贴板，别让这一下点了没反应
-                if (!opened) copyToClipboard(context, AppState.REPO_URL, "开源仓库地址")
+                openOrCopy(context, AppState.REPO_URL, "开源仓库地址")
             }
         }
-        Spacer(Modifier.height(6.dp))
+        Spacer(Modifier.height(8.dp))
+        ActionButton("查看许可条款", modifier = Modifier.fillMaxWidth()) {
+            openOrCopy(context, AppState.LICENSE_URL, "许可条款地址")
+        }
+        Spacer(Modifier.height(8.dp))
         Text(
             AppState.REPO_URL,
             color = p.textFaint,
             fontSize = 10.5.sp,
             fontFamily = FontFamily.Monospace,
         )
+        Spacer(Modifier.height(4.dp))
+        // 出处水印：界面上留着，抹掉它需要改代码
+        Text(
+            AppState.WATERMARK,
+            color = p.textFaint,
+            fontSize = 10.sp,
+            fontFamily = FontFamily.Monospace,
+        )
     }
+}
+
+/** 打开链接；没浏览器就把地址塞进剪贴板，别让这一下点了没反应。 */
+private fun openOrCopy(context: android.content.Context, url: String, label: String) {
+    val opened = runCatching {
+        context.startActivity(
+            Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+        )
+    }.isSuccess
+    if (!opened) copyToClipboard(context, url, label)
 }
 
 @Composable

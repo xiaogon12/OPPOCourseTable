@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  强制保留出处水印资源。
+  release 开了 isShrinkResources，未被代码引用的 string 会被自动删掉 ——
+  这两个水印本来就只给反编译的人看，所以得在这里显式声明别删。
+-->
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@string/watermark_origin,@string/watermark_license" />
