@@ -53,18 +53,22 @@ public class EventReminderReceiver extends BroadcastReceiver {
             // extras 里的键名各家 ROM 不一，统一回查 alert 表最稳
             String title = null;
             String desc = null;
+            String owner = null;
             long eventId = -1;
+            long begin = 0;
             Cursor cur = null;
             try {
                 cur = context.getContentResolver().query(CalendarAlerts.CONTENT_URI,
                         new String[]{CalendarAlerts.TITLE, CalendarAlerts.DESCRIPTION,
-                                CalendarAlerts.EVENT_ID, COL_CUSTOM_PKG},
+                                CalendarAlerts.EVENT_ID, COL_CUSTOM_PKG, CalendarAlerts.BEGIN},
                         CalendarAlerts.ALARM_TIME + "=?",
                         new String[]{String.valueOf(alarmTime)}, null);
                 if (cur != null && cur.moveToFirst()) {
                     title = cur.getString(0);
                     desc = cur.getString(1);
                     eventId = cur.getLong(2);
+                    owner = cur.getString(3);
+                    begin = cur.getLong(4);
                 }
             } catch (Exception e) {
                 Log.w(TAG, "回查 calendar_alerts 失败（可能没有日历权限）: " + e);
@@ -79,15 +83,35 @@ public class EventReminderReceiver extends BroadcastReceiver {
                 return;
             }
 
-            // 只对本 App 写进去的课程事件发通知，避免把用户自己的日程也推一遍
-            if (!CalendarSync.isOurs(context, eventId)) {
+            // 只对本 App 写进去的课程事件发通知，避免把用户自己的日程也推一遍。
+            // 优先看 alert 行里的来源标记，其次回查（重装后本地记录会丢）。
+            boolean ours = context.getPackageName().equals(owner)
+                    || CalendarSync.isOurs(context, eventId);
+            if (!ours) {
                 Log.i(TAG, "不是本 App 的日程，忽略: " + title + " (eventId=" + eventId + ")");
                 return;
             }
 
-            String text = TextUtils.isEmpty(desc) ? "" : desc;
-            Reminder.notify(context, title, text);
-            Log.i(TAG, "已发出课程提醒: " + title + " / " + text);
+            // 提醒时间戳是「开课时间 - 提前量」，反推出还剩多少分钟，
+            // 直接写进通知标题——这样到底提前了多久，一眼就能核对。
+            String head = "上课提醒";
+            if (begin > alarmTime) {
+                long lead = (begin - alarmTime) / 60000L;
+                if (lead > 0) {
+                    head = "还有 " + lead + " 分钟上课";
+                } else {
+                    head = "现在上课";
+                }
+            }
+            String text = TextUtils.isEmpty(desc) ? title : title + " · " + desc;
+            // 用同一种键跟自家闹钟那条路去重：两条通路前后脚都触发时只响一次
+            String key = String.format(java.util.Locale.CHINA, "%1$tY%1$tm%1$td%1$tH%1$tM-",
+                    new java.util.Date(begin)) + title;
+            if (!Reminder.claim(context, key)) {
+                return;
+            }
+            Reminder.notify(context, head, text, key);
+            Log.i(TAG, "已发出课程提醒: " + head + " / " + text);
         } catch (Exception e) {
             Log.w(TAG, "处理 EVENT_REMINDER 出错: " + e);
         }

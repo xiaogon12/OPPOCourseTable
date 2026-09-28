@@ -18,32 +18,50 @@ import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.os.Build;
 import android.os.Looper;
 import android.util.Log;
 
+import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.List;
 import java.util.Locale;
 
 /**
- * 课前提醒。
+ * 课前提醒：两条路一起走。
  *
- * 方案：AlarmManager 精确闹钟（setExactAndAllowWhileIdle）
- *   · 「上课前 N 分钟」属于用户显式设置的提醒，可以申请精确闹钟；
- *   · 触发后由 BroadcastReceiver 发通知，并顺手安排下一次；
- *   · 开机 / 应用更新后由 Receiver 重新排一次。
+ * <p><b>主路——写进系统日历</b>（{@link CalendarSync}）：课程 +「提前 N 分钟」
+ * 一起写进日历，到点由<b>系统日历</b>（{@code com.heytap.wearable.calendar}）
+ * 按这个提前量弹提醒。它是系统应用，息屏照样能提醒——这台表上真正会响的就是它。
  *
- * 每次只排「下一次」，不做批量，避免被系统判定为滥用后台。
+ * <p><b>辅路——自己排闹钟</b>（{@link #armAlarms}）：多一层保险，
+ * 表亮着的时候会额外响一次，靠 {@link #claim} 去重，不会重复打扰。
+ * 息屏时这条路基本指望不上：ColorOS 手表版的 BmPowerManager 会在
+ * 「息屏 + 电量均衡」下直接拒投第三方闹钟（日志
+ * {@code forbin thirdapp(...) set wakeup alarm} /
+ * {@code Forbid delivering pending non wakeup alarm}），
+ * 换 setAlarmClock、加电池白名单都没用，属于系统限制。
+ *
+ * <p>所以：<b>改了「提前 N 分钟」必须重写日历</b>，
+ * {@code MainActivity.configChanged()} 里那一次 {@link #schedule} 不能省。
  */
 public final class Reminder {
 
     private static final String TAG = "CourseTable";
     public static final String CHANNEL_ID = "course_reminder";
-    private static final int REQ_NORMAL = 2001;
+    /** 一次排多少条提醒（未来几天），每响一次补一次 */
+    private static final int SLOTS = 6;
+    /** 提醒闹钟的 PendingIntent 请求码起点，每个槽位一个 */
+    private static final int REQ_BASE = 2110;
     private static final int REQ_TEST = 2002;
 
+    private static final String PREFS = "ctw_reminder";
+
     public static final String EXTRA_TEST = "test";
+    public static final String EXTRA_HEAD = "head";
+    public static final String EXTRA_TEXT = "text";
+    public static final String EXTRA_KEY = "key";
 
     private Reminder() {
     }
@@ -53,6 +71,12 @@ public final class Reminder {
         public Course course;
         public Calendar start;
         public long triggerAt;
+        /** 通知标题，如「还有 60 分钟上课」 */
+        public String head;
+        /** 通知正文，如「高等数学 · 08:00-09:40 · A103」 */
+        public String text;
+        /** 去重用的键：同一节课的提醒只发一次 */
+        public String key;
     }
 
     // ---------------------------------------------------------- 通知渠道
@@ -116,20 +140,27 @@ public final class Reminder {
 
     // ---------------------------------------------------------- 排程
 
-    /** 计算下一次需要提醒的时间；没有则返回 null */
-    public static Occ next(Context c) {
+    /**
+     * 未来 {@code limit} 次该提醒的时刻，按时间正序。
+     *
+     * <p>一次排一串、而不是只排「下一条」：只排一条的话，任何一次没投递
+     * （息屏被系统省电掐掉、进程被杀、用户关机）都会让后面的提醒一起断掉。
+     * 排成串，每响一次就补一次，链路自己能接上。
+     */
+    public static List<Occ> upcoming(Context c, int limit) {
         Store store = Store.get(c);
         AppConfig cfg = store.config;
         TimeTable tt = new TimeTable(cfg);
+        List<Occ> out = new ArrayList<>();
 
         Calendar now = Calendar.getInstance();
+        long nowMs = now.getTimeInMillis();
         for (int d = 0; d < 15; d++) {
             Calendar day = (Calendar) now.clone();
             day.add(Calendar.DAY_OF_MONTH, d);
             int dow = Weeks.dowOf(day);
             int week = Weeks.weekOf(cfg, day);
             List<Course> list = store.ofDay(dow, week);
-            Occ best = null;
             for (Course co : list) {
                 int startMin = tt.start(co.startPeriod);
                 Calendar st = (Calendar) day.clone();
@@ -138,24 +169,57 @@ public final class Reminder {
                 st.set(Calendar.SECOND, 0);
                 st.set(Calendar.MILLISECOND, 0);
                 if (!st.after(now)) {
-                    continue;
+                    continue;   // 已经开课了，不再为它排提醒
                 }
-                if (best == null || st.before(best.start)) {
-                    Occ o = new Occ();
-                    o.course = co;
-                    o.start = st;
-                    o.triggerAt = st.getTimeInMillis() - cfg.reminderMinutes * 60000L;
-                    if (o.triggerAt <= now.getTimeInMillis()) {
-                        o.triggerAt = now.getTimeInMillis() + 1000L;
-                    }
-                    best = o;
+                Occ o = new Occ();
+                o.course = co;
+                o.start = st;
+                o.triggerAt = st.getTimeInMillis() - cfg.reminderMinutes * 60000L;
+                if (o.triggerAt <= nowMs) {
+                    // 提醒时刻已经过了（典型场景：刚把提前量改大）——
+                    // 马上补一条，让用户立刻看到新设置生效，而不是静悄悄什么都不发生
+                    o.triggerAt = nowMs + 3000L;
                 }
-            }
-            if (best != null) {
-                return best;
+                o.head = "还有 " + cfg.reminderMinutes + " 分钟上课";
+                o.text = notifyText(co, tt);
+                o.key = keyOf(co, st);
+                out.add(o);
+                if (out.size() >= limit) {
+                    return out;
+                }
             }
         }
-        return null;
+        java.util.Collections.sort(out, new java.util.Comparator<Occ>() {
+            @Override
+            public int compare(Occ a, Occ b) {
+                return Long.compare(a.triggerAt, b.triggerAt);
+            }
+        });
+        return out;
+    }
+
+    /** 下一次需要提醒的时刻；没有则返回 null */
+    public static Occ next(Context c) {
+        List<Occ> list = upcoming(c, 1);
+        return list.isEmpty() ? null : list.get(0);
+    }
+
+    /** 通知正文：课程名 · 上课时间 · 教室老师 */
+    public static String notifyText(Course co, TimeTable tt) {
+        StringBuilder sb = new StringBuilder(co.name).append(" · ").append(tt.rangeOfCourse(co));
+        String sub = co.subtitle();
+        if (sub != null && !sub.isEmpty()) {
+            sb.append(" · ").append(sub);
+        }
+        return sb.toString();
+    }
+
+    /** 同一节课的稳定标识，用来去重（同一天、同一时间、同一门课算同一条） */
+    private static String keyOf(Course co, Calendar start) {
+        return String.format(Locale.CHINA, "%04d%02d%02d%02d%02d-%s",
+                start.get(Calendar.YEAR), start.get(Calendar.MONTH) + 1,
+                start.get(Calendar.DAY_OF_MONTH), start.get(Calendar.HOUR_OF_DAY),
+                start.get(Calendar.MINUTE), co.name);
     }
 
     /** 串行执行，避免连续改设置时几个线程同时重写日历 */
@@ -198,66 +262,66 @@ public final class Reminder {
     private static void scheduleNow(Context c) {
         boolean cal = CalendarSync.hasPermission(c);
         Log.i(TAG, "排程: 日历权限=" + cal + "，课表 " + Store.get(c).courses.size() + " 门");
+        // 日历是主路：把课程 +「提前 N 分钟」写进去，由系统日历负责到点提醒。
+        // 这里必须是「每次设置变了都重写」——不重写的话日历里留着的还是上一次的
+        // 提前量（甚至上一次那张课表），用户在表上怎么调设置都不会生效。
         if (cal) {
             int n = CalendarSync.sync(c);
-            if (n >= 0) {
-                cancelAlarm(c);
-                Log.i(TAG, "提醒走系统日历，共 " + n + " 条");
-                return;
-            }
+            Log.i(TAG, "日历同步: 写入 " + n + " 条");
         }
-        scheduleByAlarm(c);
+        armAlarms(c);
     }
 
-    /** 改走日历后把自家闹钟撤掉，避免重复提醒 */
-    private static void cancelAlarm(Context c) {
+    /**
+     * 自己排未来几条提醒（辅助路径，见类注释）。
+     *
+     * <p>用 {@code setAlarmClock} 而不是普通精确闹钟：普通 wakeup 闹钟在
+     * 设置阶段就被 ColorOS 拒掉（{@code forbin thirdapp set wakeup alarm}）；
+     * {@code setAlarmClock} 至少能被排进队列、并在系统「下次闹钟」里可见，
+     * 表亮着的时候能正常响。
+     *
+     * <p>一次排 {@link #SLOTS} 条，每条一个独立槽位；响应一次就整体重排一次，
+     * 所以某次没投递也不会让后面的提醒一起断掉。
+     */
+    private static void armAlarms(Context c) {
         try {
-            AlarmManager am = (AlarmManager) c.getSystemService(Context.ALARM_SERVICE);
-            if (am != null) {
-                am.cancel(pending(c, REQ_NORMAL, false));
-            }
-        } catch (Exception ignored) {
-        }
-    }
-
-    /** AlarmManager 兜底排程 */
-    private static void scheduleByAlarm(Context c) {
-        try {
-            ensureChannel(c);
             AlarmManager am = (AlarmManager) c.getSystemService(Context.ALARM_SERVICE);
             if (am == null) {
                 return;
             }
-            PendingIntent pi = pending(c, REQ_NORMAL, false);
-            am.cancel(pi);
-
+            // 先撤掉旧槽位，避免改完设置新旧提醒同时存在
+            for (int i = 0; i < SLOTS; i++) {
+                am.cancel(pending(c, REQ_BASE + i, false, null));
+            }
             AppConfig cfg = Store.get(c).config;
             if (!cfg.reminderOn) {
-                Log.i(TAG, "提醒已关闭");
+                Log.i(TAG, "提醒已关闭，已撤掉全部提醒闹钟");
                 return;
             }
-            Occ o = next(c);
-            if (o == null) {
-                Log.i(TAG, "没有可提醒的课程");
-                return;
-            }
-            // 用 setAlarmClock 而不是 setExactAndAllowWhileIdle：
-            // ColorOS 手表版的 BmPowerManager 会拦截第三方普通 wakeup 闹钟
-            // （日志 forbin thirdapp set wakeup alarm），但 setAlarmClock 是
-            // 「用户闹钟」语义，享有系统闹钟同级的唤醒优先级，不在拦截名单。
+            ensureChannel(c);
             Intent show = new Intent(c, MainActivity.class);
             int sflags = PendingIntent.FLAG_UPDATE_CURRENT;
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                 sflags |= PendingIntent.FLAG_IMMUTABLE;
             }
             PendingIntent showPi = PendingIntent.getActivity(c, 3002, show, sflags);
-            am.setAlarmClock(new AlarmManager.AlarmClockInfo(o.triggerAt, showPi), pi);
-            Log.i(TAG, "下一次提醒（应用闹钟）：" + fmt(o.triggerAt) + " -> " + o.course.name);
+
+            long now = System.currentTimeMillis();
+            int slot = 0;
+            for (Occ o : upcoming(c, SLOTS)) {
+                if (slot >= SLOTS || o.triggerAt <= now) {
+                    continue;
+                }
+                am.setAlarmClock(new AlarmManager.AlarmClockInfo(o.triggerAt, showPi),
+                        pending(c, REQ_BASE + slot, false, o));
+                Log.i(TAG, "排提醒[" + slot + "] " + fmt(o.triggerAt) + " -> " + o.text);
+                slot++;
+            }
+            Log.i(TAG, "共排下 " + slot + " 条提醒（提前 " + cfg.reminderMinutes + " 分钟）");
         } catch (Exception e) {
-            Log.w(TAG, "排程失败: " + e);
+            Log.w(TAG, "排提醒失败: " + e);
         }
     }
-
 
     /** 10 秒后测试一条通知 */
     public static void test(Context c) {
@@ -266,7 +330,7 @@ public final class Reminder {
         if (am == null) {
             return;
         }
-        PendingIntent pi = pending(c, REQ_TEST, true);
+        PendingIntent pi = pending(c, REQ_TEST, true, null);
         long at = System.currentTimeMillis() + 10000L;
         Intent show = new Intent(c, MainActivity.class);
         int sflags = PendingIntent.FLAG_UPDATE_CURRENT;
@@ -277,9 +341,15 @@ public final class Reminder {
         am.setAlarmClock(new AlarmManager.AlarmClockInfo(at, showPi), pi);
     }
 
-    private static PendingIntent pending(Context c, int req, boolean test) {
+    /** 闹钟携带通知文案，触发时直接用，不再临时重算（晚点响也不会张冠李戴） */
+    private static PendingIntent pending(Context c, int req, boolean test, Occ o) {
         Intent i = new Intent(c, ReminderReceiver.class);
         i.putExtra(EXTRA_TEST, test);
+        if (o != null) {
+            i.putExtra(EXTRA_HEAD, o.head);
+            i.putExtra(EXTRA_TEXT, o.text);
+            i.putExtra(EXTRA_KEY, o.key);
+        }
         int flags = PendingIntent.FLAG_UPDATE_CURRENT;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             flags |= PendingIntent.FLAG_IMMUTABLE;
@@ -287,9 +357,41 @@ public final class Reminder {
         return PendingIntent.getBroadcast(c, req, i, flags);
     }
 
+    // ---------------------------------------------------------- 去重
+
+    /**
+     * 同一条提醒短时间内只发一次。
+     *
+     * <p>两条通路（系统日历 App 那条 + 我们自己排的闹钟）有可能前后脚都触发，
+     * 这里做一次合并，免得一节课震两次。
+     *
+     * @return true 表示这次该发；false 表示刚发过、跳过
+     */
+    public static boolean claim(Context c, String key) {
+        if (key == null || key.isEmpty()) {
+            return true;
+        }
+        SharedPreferences sp = c.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        long now = System.currentTimeMillis();
+        if (key.equals(sp.getString("last_key", ""))
+                && now - sp.getLong("last_at", 0L) < 20 * 60 * 1000L) {
+            Log.i(TAG, "同一条提醒刚发过，跳过: " + key);
+            return false;
+        }
+        sp.edit().putString("last_key", key).putLong("last_at", now).apply();
+        return true;
+    }
+
     // ---------------------------------------------------------- 发通知
 
     public static void notify(Context c, String title, String text) {
+        notify(c, title, text, null);
+    }
+
+    /**
+     * @param tag 同一条提醒用同一个 tag，后来的会覆盖先前的，不同课程互不覆盖
+     */
+    public static void notify(Context c, String title, String text, String tag) {
         ensureChannel(c);
         NotificationManager nm = (NotificationManager) c.getSystemService(Context.NOTIFICATION_SERVICE);
         if (nm == null) {
@@ -322,7 +424,12 @@ public final class Reminder {
                 .setWhen(System.currentTimeMillis())
                 .setShowWhen(true);
         try {
-            nm.notify(CHANNEL_ID.hashCode() & 0xFFFF, b.build());
+            if (tag == null || tag.isEmpty()) {
+                nm.notify(CHANNEL_ID.hashCode() & 0xFFFF, b.build());
+            } else {
+                // 带 tag：不同课程的提醒互不覆盖，同一节课的重复提醒会覆盖自己
+                nm.notify(tag, 0x11, b.build());
+            }
         } catch (Exception e) {
             Log.w(TAG, "通知失败: " + e);
         }
@@ -341,14 +448,17 @@ public final class Reminder {
         }
         TimeTable tt = new TimeTable(cfg);
         int startMin = tt.start(o.course.startPeriod);
-        String via = CalendarSync.hasPermission(c)
-                ? "由系统日历提醒 · 已写入 " + CalendarSync.lastCount(c) + " 条（App 不用常驻后台）"
-                : "未授权日历，暂用应用闹钟（息屏可能不响）";
+        StringBuilder via = new StringBuilder();
+        if (CalendarSync.hasPermission(c)) {
+            via.append("已同步进系统日历 ").append(CalendarSync.lastCount(c)).append(" 条，由系统日历提醒");
+        } else {
+            via.append("未授权日历，只能靠 App 自己的闹钟（息屏可能不响）");
+        }
         return "下一次课程：" + o.course.name + "\n"
                 + String.format(Locale.CHINA, "%d月%d日 %s %s", o.start.get(Calendar.MONTH) + 1,
                 o.start.get(Calendar.DAY_OF_MONTH), Weeks.DOW_SHORT[Weeks.dowOf(o.start)],
                 TimeTable.hhmm(startMin))
-                + "\n提前 " + cfg.reminderMinutes + " 分钟提醒\n" + via;
+                + "\n提前 " + cfg.reminderMinutes + " 分钟提醒（" + fmt(o.triggerAt) + "）\n" + via;
     }
 
     public static String describe(Context c, Course co) {

@@ -39,7 +39,7 @@ import java.util.List;
  *   正在上的课 · 已过半   -> 焦点让给下一节（徽章「即将开始」），
  *                            自己退到上方标「即将下课」
  *   正在上的课 · 过半且没有下一节（当天最后一节）
- *                        -> 焦点仍是它（居中），但徽章改「即将下课」
+ *                        -> 焦点仍是它，且保持「进行中」的高亮（不压暗）
  *   没课在上的课间 / 还没开始 -> 焦点是「下一节」，徽章「即将开始」
  *   今天全上完             -> 不高亮，列表回到顶部
  * </pre>
@@ -269,9 +269,10 @@ public class CoursePage extends FrameLayout {
                 focusState = STATE_NEXT;
                 headerState = STATE_NEXT;
             } else if (runningIdx >= 0) {
-                // 当天最后一节且已过半：还是它居中，但换成「即将下课」
+                // 当天最后一节：后面没有课可以让位，就一直保持高亮——
+                // 不压暗、不改徽章，直到真的下课
                 focus = runningIdx;
-                focusState = STATE_ENDING;
+                focusState = STATE_RUNNING;
                 headerState = STATE_RUNNING;
             } else {
                 headerState = STATE_ENDED;

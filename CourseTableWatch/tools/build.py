@@ -50,8 +50,8 @@ MIN_SDK = "27"
 TARGET_SDK = "29"
 # 版本号唯一来源：aapt2 link 的这两个参数会覆盖 AndroidManifest.xml 里的同名属性，
 # 所以改版本只改这里（清单里的值只是为了让人看代码时不困惑，保持一致即可）。
-VERSION_CODE = "9"
-VERSION_NAME = "0.8.0"
+VERSION_CODE = "10"
+VERSION_NAME = "0.8.1"
 APK_NAME = "CourseTableWatch.apk"
 
 ADB_FALLBACK = Path(r"E:\platform-tools\adb.exe")

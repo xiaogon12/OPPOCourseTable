@@ -35,32 +35,37 @@ import java.util.List;
 import java.util.TimeZone;
 
 /**
- * 把课程写进系统日历，让「日历 Provider」替我们排提醒闹钟。
+ * 把课程写进系统日历，提醒交给系统日历来发。
  *
  * <p><b>为什么要这么绕：</b>ColorOS 手表版在「息屏 + 电量均衡」下会直接拒绝第三方 App
  * 自设的 wakeup 闹钟（日志 {@code forbin thirdapp(...) set wakeup alarm}），
- * 加电池白名单、换 setAlarmClock 都无效。但系统日历 Provider
- * （{@code com.android.providers.calendar}）是系统应用，它排的
- * {@code android.intent.action.EVENT_REMINDER} 闹钟会被正常投递。
+ * 加电池白名单、换 setAlarmClock 都无效——息屏时 App 自己的闹钟根本投不出来。
+ * 系统日历是系统应用，不受这条限制，所以真正会响的是它。
  *
- * <p><b>实测通过的完整链路：</b>
+ * <p><b>链路上两个要点：</b>
  * <ol>
- *   <li>本类写入 事件 + Reminders 行 + CalendarAlerts 行；</li>
- *   <li>对 Reminders 行做一次 UPDATE —— 这是让 Provider 调
- *       {@code scheduleNextAlarm()} 重排闹钟的有效触发点（只 insert 不会触发）；</li>
- *   <li>Provider 排下 RTC_WAKEUP 闹钟；</li>
- *   <li>到点系统投递 {@code EVENT_REMINDER} 广播，并把 App 进程拉起来；</li>
- *   <li>{@link EventReminderReceiver} 收到后发通知。</li>
+ *   <li>除了事件本身，还要写一条 Reminders 行（提前 N 分钟）和一条 CalendarAlerts 行
+ *       （{@code alarmTime = 开课时间 - 提前量}）——系统日历按它们决定什么时候提醒；</li>
+ *   <li>写完对 Reminders 行做一次 UPDATE，把 Provider 的重排逻辑叫起来。</li>
  * </ol>
  *
- * <p>App 不需要常驻后台，也不依赖自身闹钟（那条路在息屏时是废的）。
+ * <p>App 不需要常驻后台，也不依赖自身闹钟。
  */
 public final class CalendarSync {
 
     private static final String TAG = "CourseTable";
 
-    /** 写进 description 的标记，用来区分用户自己的日程 */
+    /** 旧版写进 description 的标记（保留只为清理历史遗留事件） */
     public static final String MARK = "#ctw#";
+
+    /**
+     * 事件表里标记「这条是本 App 写的」的列。
+     *
+     * <p>现在靠它来认领 / 清理事件，而不是靠 SharedPreferences 里记的 id 列表：
+     * 重装、清除数据都会把 id 列表抹掉，而日历里的事件还在——那样每节课就会
+     * 在日历里越堆越多（各自带着不同年代的提醒时间），提醒自然就乱了。
+     */
+    private static final String COL_CUSTOM_PKG = "customAppPackage";
 
     /**
      * 往前写多少天。
@@ -73,6 +78,16 @@ public final class CalendarSync {
     private static final String KEY_IDS = "event_ids";
     private static final String KEY_LAST_AT = "last_at";
     private static final String KEY_LAST_SIG = "last_sig";
+    private static final String KEY_VER = "app_ver";
+
+    /** 当前安装的版本名，用来判断「是不是换了新包」 */
+    private static String appVersion(Context c) {
+        try {
+            return c.getPackageManager().getPackageInfo(c.getPackageName(), 0).versionName;
+        } catch (Exception e) {
+            return "-";
+        }
+    }
 
     /** 上一次同步的时间戳，用来防抖（onCreate + onResume 会连着调两次） */
     private static long sLastSyncAt = 0L;
@@ -190,6 +205,17 @@ public final class CalendarSync {
         }
         long nowAt = System.currentTimeMillis();
         String sig = signature(cfg) + "||" + dataSig(c);
+        // 版本一变就无条件重写一次日历：重装 / 升级会丢掉本地那份事件 id 记录，
+        // 旧事件只能靠这次重写清掉；否则它们会一直躺在日历里，各带一个
+        // 过期年代的提醒时间。正常打开 App 时版本没变，还是走下面的防抖。
+        String ver = appVersion(c);
+        String lastVer = sp.getString(KEY_VER, "");
+        if (!ver.equals(lastVer)) {
+            Log.i(TAG, "日历同步: 版本 " + (lastVer.isEmpty() ? "未知" : lastVer) + " -> " + ver + "，强制重写");
+            sLastSig = null;
+            sLastSyncAt = 0L;
+        }
+        sp.edit().putString(KEY_VER, ver).apply();
         if (sig.equals(sLastSig) && lastCount(c) > 0) {
             long gap = sLastSyncAt == 0L ? Long.MAX_VALUE : nowAt - sLastSyncAt;
             if (gap < MIN_INTERVAL) {
@@ -273,7 +299,22 @@ public final class CalendarSync {
                 return true;
             }
         }
-        return false;
+        // 记录里没有就回查标记：重装 / 清除数据后记录会丢，
+        // 但事件还在日历里，不认领的话这些老事件就再也不会提醒（也清不掉）。
+        Cursor cur = null;
+        try {
+            cur = c.getContentResolver().query(
+                    ContentUris.withAppendedId(Events.CONTENT_URI, eventId),
+                    new String[]{COL_CUSTOM_PKG}, null, null, null);
+            return cur != null && cur.moveToFirst()
+                    && c.getPackageName().equals(cur.getString(0));
+        } catch (Exception e) {
+            return false;
+        } finally {
+            if (cur != null) {
+                cur.close();
+            }
+        }
     }
 
     /** 忽略防抖，强制同步一次（界面上点「重新同步」时用） */
@@ -287,26 +328,37 @@ public final class CalendarSync {
     /** 写一条课程事件，返回 {eventId, reminderId}；失败返回 null */
     private static long[] writeOne(Context c, long calId, Course co, TimeTable tt,
                                    long start, long end, String tz, int minutes) {
+        return writeRaw(c, calId, co.name, caption(co, tt), co.room, start, end, tz, minutes);
+    }
+
+    /**
+     * 写「事件 + 提醒行 + alert 行」。
+     *
+     * <p>每条都带 {@code customAppPackage} 标记——清理旧事件、判断某条提醒是不是
+     * 我们的，都靠这个标记，不再依赖本地记录（记录会因重装 / 清数据丢失）。
+     */
+    private static long[] writeRaw(Context c, long calId, String title, String desc,
+                                   String room, long start, long end, String tz, int minutes) {
         ContentResolver cr = c.getContentResolver();
         try {
             ContentValues v = new ContentValues();
             v.put(Events.CALENDAR_ID, calId);
-            v.put(Events.TITLE, co.name);
+            v.put(Events.TITLE, title);
             // 备注写成给人看的正常文案，不再塞 #ctw# 之类的标记
-            v.put(Events.DESCRIPTION, caption(co, tt));
-            if (!co.room.isEmpty()) {
-                v.put(Events.EVENT_LOCATION, co.room);
+            v.put(Events.DESCRIPTION, desc);
+            if (room != null && !room.isEmpty()) {
+                v.put(Events.EVENT_LOCATION, room);
             }
             // 用 customAppPackage 标记「这条是本 App 写的」。
             // 这个字段日历界面不显示，所以备注里看不到任何多余字符。
-            v.put("customAppPackage", c.getPackageName());
+            v.put(COL_CUSTOM_PKG, c.getPackageName());
             v.put(Events.DTSTART, start);
             v.put(Events.DTEND, end);
             v.put(Events.EVENT_TIMEZONE, tz);
             v.put(Events.HAS_ALARM, 1);
             Uri uri = cr.insert(Events.CONTENT_URI, v);
             if (uri == null) {
-                Log.w(TAG, "日历同步: 插入事件返回 null -> " + co.name);
+                Log.w(TAG, "日历同步: 插入事件返回 null -> " + title);
                 return null;
             }
             long eventId = Long.parseLong(uri.getLastPathSegment());
@@ -334,17 +386,18 @@ public final class CalendarSync {
             }
             return new long[]{eventId, reminderId};
         } catch (Exception e) {
-            Log.w(TAG, "日历同步: 写入失败 " + co.name + " -> " + e);
+            Log.w(TAG, "日历同步: 写入失败 " + title + " -> " + e);
             return null;
         }
     }
 
-    /** 删掉上一次同步写进去的事件 */
+    /** 删掉本 App 写进日历的事件——不只是上一次同步的那些 */
     public static synchronized void clear(Context c) {
         if (!hasPermission(c)) {
             return;
         }
         ContentResolver cr = c.getContentResolver();
+        // 1) 按记下的 id 删（最直接）
         for (Long id : loadIds(c)) {
             try {
                 cr.delete(ContentUris.withAppendedId(Events.CONTENT_URI, id), null, null);
@@ -352,12 +405,23 @@ public final class CalendarSync {
             }
         }
         saveIds(c, new ArrayList<Long>());
-        // 兜底：按标记删（prefs 丢了也能清干净）
+        // 2) 按标记删。这一步是必需的，不是兜底：重装 / 清除数据会丢掉上面那份
+        //    id 记录，但事件还留在日历里。只靠 id 就会越积越多——同一节课在日历
+        //    里出现两三条，每条带着不同年代的提醒时间，用户看到的提醒自然不对。
+        try {
+            int n = cr.delete(Events.CONTENT_URI, COL_CUSTOM_PKG + "=?",
+                    new String[]{c.getPackageName()});
+            if (n > 0) {
+                Log.i(TAG, "日历同步: 按标记清掉 " + n + " 条历史事件");
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "日历同步: 按标记清理失败 " + e);
+        }
+        // 3) 更早的版本把 #ctw# 写在备注里，顺手一起清
         try {
             cr.delete(Events.CONTENT_URI, Events.DESCRIPTION + " LIKE ?",
                     new String[]{MARK + "%"});
-        } catch (Exception e) {
-            Log.w(TAG, "日历同步: 兜底清理失败 " + e);
+        } catch (Exception ignored) {
         }
     }
 
@@ -429,14 +493,10 @@ public final class CalendarSync {
             return "找不到可写的日历";
         }
         try {
-            Calendar now = Calendar.getInstance();
-            long start = now.getTimeInMillis() + 2 * 60 * 1000L;
+            long start = System.currentTimeMillis() + 2 * 60 * 1000L;
             long end = start + 30 * 60 * 1000L;
-            Course co = new Course();
-            co.name = "测试课程提醒";
-            co.room = "A座302";
-            long[] r = writeOne(c, calId, co, new TimeTable(Store.get(c).config),
-                    start, end, TimeZone.getDefault().getID(), 1);
+            long[] r = writeRaw(c, calId, "测试课程提醒", "1 分钟后开始 · 提醒链路自检",
+                    "A座302", start, end, TimeZone.getDefault().getID(), 1);
             if (r == null) {
                 return "写入失败";
             }
@@ -448,6 +508,45 @@ public final class CalendarSync {
             return "已写入，1 分钟后提醒（可以熄屏试）";
         } catch (Exception e) {
             Log.w(TAG, "测试事件写入失败 " + e);
+            return "写入失败：" + e.getMessage();
+        }
+    }
+
+    /**
+     * 按当前设置的提前量写一条自检事件：从现在起「提前量 + 1」分钟后开始，
+     * 于是提醒应该在 <b>1 分钟后</b> 到，通知标题会写明「还有 N 分钟上课」。
+     *
+     * <p>用它来判断「提前多少分钟」到底有没有生效——如果提醒是在
+     * 「提前量 + 1」分钟后（也就是开课时）才到，那就是提前量没起作用。
+     * 这条事件带 App 标记，下次同步会被自动清掉。
+     */
+    public static String testLeadEvent(Context c) {
+        if (!hasPermission(c)) {
+            return "没有日历权限";
+        }
+        long calId = findWritableCalendar(c);
+        if (calId < 0) {
+            return "找不到可写的日历";
+        }
+        try {
+            AppConfig cfg = Store.get(c).config;
+            int lead = Math.max(1, cfg.reminderMinutes);
+            long start = System.currentTimeMillis() + (lead + 1) * 60000L;
+            long end = start + 45 * 60000L;
+            long[] r = writeRaw(c, calId, "提醒链路自检",
+                    "开课时间就是现在起的 " + (lead + 1) + " 分钟后 · 提前 " + lead + " 分钟提醒",
+                    null, start, end, TimeZone.getDefault().getID(), lead);
+            if (r == null) {
+                return "写入失败";
+            }
+            ContentValues u = new ContentValues();
+            u.put(Reminders.MINUTES, lead);
+            c.getContentResolver().update(
+                    ContentUris.withAppendedId(Reminders.CONTENT_URI, r[1]), u, null, null);
+            Log.i(TAG, "自检事件已写入 event=" + r[0] + "，提醒应在 1 分钟后到达");
+            return "1 分钟后应收到「还有 " + lead + " 分钟上课」";
+        } catch (Exception e) {
+            Log.w(TAG, "自检事件写入失败 " + e);
             return "写入失败：" + e.getMessage();
         }
     }

@@ -19,6 +19,8 @@ import android.util.Log;
 /** 闹钟触发：发通知 + 安排下一次 */
 public class ReminderReceiver extends BroadcastReceiver {
 
+    private static final String TAG = "CourseTable";
+
     @Override
     public void onReceive(Context context, Intent intent) {
         boolean test = intent != null && intent.getBooleanExtra(Reminder.EXTRA_TEST, false);
@@ -30,19 +32,30 @@ public class ReminderReceiver extends BroadcastReceiver {
             }
             AppConfig cfg = Store.get(context).config;
             if (!cfg.reminderOn) {
-                Log.i("CourseTable", "收到闹钟但提醒已关闭");
+                Log.i(TAG, "收到闹钟但提醒已关闭");
                 return;
             }
-            Reminder.Occ o = Reminder.next(context);
-            if (o == null) {
+            // 文案在排闹钟时就写进 intent 了：晚点响也不会张冠李戴
+            String head = intent == null ? null : intent.getStringExtra(Reminder.EXTRA_HEAD);
+            String text = intent == null ? null : intent.getStringExtra(Reminder.EXTRA_TEXT);
+            String key = intent == null ? null : intent.getStringExtra(Reminder.EXTRA_KEY);
+            if (head == null || text == null) {
+                // 老版本留下的闹钟没带文案，退回「现算一次」
+                Reminder.Occ o = Reminder.next(context);
+                if (o == null) {
+                    return;
+                }
+                head = o.head;
+                text = o.text;
+                key = o.key;
+            }
+            if (!Reminder.claim(context, key)) {
                 return;
             }
-            String title = cfg.reminderMinutes + " 分钟后上课";
-            String text = Reminder.describe(context, o.course);
-            Reminder.notify(context, title, text);
-            Log.i("CourseTable", "已提醒：" + title + " " + text);
+            Reminder.notify(context, head, text, key);
+            Log.i(TAG, "已提醒：" + head + " / " + text);
         } catch (Exception e) {
-            Log.w("CourseTable", "处理提醒失败: " + e);
+            Log.w(TAG, "处理提醒失败: " + e);
         } finally {
             // 无论成功与否都重排下一次
             Reminder.schedule(context);

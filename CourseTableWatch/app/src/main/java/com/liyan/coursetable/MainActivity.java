@@ -131,10 +131,12 @@ public class MainActivity extends Activity implements Host {
     }
 
     /**
-     * 只服务调试、正常启动完全不走的两个 adb 参数：
+     * 只服务调试、正常启动完全不走的四个 adb 参数：
      * <pre>
-     *   --ez receive true   直接把「从手机接收」打开
-     *   --ez restore true   从 /sdcard 的副本恢复课表
+     *   --ez receive true       直接把「从手机接收」打开
+     *   --ez restore true       从 /sdcard 的副本恢复课表
+     *   --ez selftest true      按当前「提前 N 分钟」写一条自检事件，1 分钟后应收到提醒
+     *   --ez remindertest true  10 秒后推一条测试通知（用来验息屏能不能响）
      * </pre>
      *
      * 为什么需要 receive：这台手表充电时会被 OPPO 的 HeySecurity 全屏悬浮窗盖住，
@@ -145,6 +147,17 @@ public class MainActivity extends Activity implements Host {
         if (intent == null) {
             return;
         }
+        if (getIntent() != null && getIntent().hasExtra("set_lead")) {
+            // 调试：直接改「提前 N 分钟」并走一遍完整的保存 + 重排链路，
+            // 用来验证「改设置立刻生效」（表上戳 stepper 太慢，也不好自动化）
+            int lead = getIntent().getIntExtra("set_lead", 0);
+            getIntent().removeExtra("set_lead");
+            if (lead > 0) {
+                cfg().reminderMinutes = Math.max(5, Math.min(60, lead));
+                configChanged(false);
+                toast("提前量已改为 " + cfg().reminderMinutes + " 分钟");
+            }
+        }
         if (intent.getBooleanExtra("restore", false)) {
             intent.removeExtra("restore");
             int n = Store.get(this).restoreFromBackup(this);
@@ -152,6 +165,29 @@ public class MainActivity extends Activity implements Host {
             if (n > 0) {
                 configChanged(true);
             }
+            return;
+        }
+        if (intent.getBooleanExtra("remindertest", false)) {
+            intent.removeExtra("remindertest");
+            Reminder.test(this);
+            toast("10 秒后推送测试通知");
+            return;
+        }
+        if (intent.getBooleanExtra("selftest", false)) {
+            intent.removeExtra("selftest");
+            final Context app = getApplicationContext();
+            new Thread("reminder-selftest") {
+                @Override
+                public void run() {
+                    final String msg = CalendarSync.testLeadEvent(app);
+                    runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            toast(msg);
+                        }
+                    });
+                }
+            }.start();
             return;
         }
         if (!intent.getBooleanExtra("receive", false)) {
@@ -314,6 +350,11 @@ public class MainActivity extends Activity implements Host {
         Store.get(this).config.save(this);
         cfg().ensurePerPeriod();
         tt = new TimeTable(cfg());
+        // 改设置必须重排提醒。
+        // 这条以前漏了：在表上改「提前分钟数 / 作息时间 / 学期周数」只存了配置、
+        // 重画了界面，闹钟和日历都还是旧的排法——表现就是「怎么改都不生效」，
+        // 要等下次打开 App 才偶然跟上。schedule() 自己会丢到后台线程，不卡界面。
+        Reminder.schedule(this);
         if (rebuildUi) {
             palette = Palette.byId(cfg().themeId);
             getWindow().setBackgroundDrawable(new ColorDrawable(palette.bg));
