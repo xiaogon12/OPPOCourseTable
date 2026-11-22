@@ -16,7 +16,7 @@ OPPO Watch 课程表 —— 极简构建脚本
 aapt2 / javac / d8 / zipalign / apksigner 完成打包。
 
 用法（在项目根目录）：
-    python tools/build.py              # 构建 debug APK
+    python tools/build.py              # 构建 release APK
     python tools/build.py --install    # 构建并安装到手表
     python tools/build.py --clean      # 清理构建产物
     python tools/build.py --logcat     # 安装后跟踪 App 日志
@@ -25,6 +25,7 @@ aapt2 / javac / d8 / zipalign / apksigner 完成打包。
 import argparse
 import os
 import re
+import secrets
 import shutil
 import subprocess
 import sys
@@ -41,7 +42,8 @@ OBJ = BUILD / "obj"
 DEX = BUILD / "dex"
 OUT = BUILD / "apk"
 GEN_RES = BUILD / "genres" / "res"      # 由脚本生成的资源（二维码等）
-KEYSTORE = ROOT / "tools" / "debug.keystore"
+KEYSTORE = ROOT / "tools" / "release.keystore"
+KEY_PROPS = ROOT / "tools" / "keystore.properties"
 
 PKG = "com.liyan.coursetable"
 MIN_SDK = "27"
@@ -50,8 +52,8 @@ MIN_SDK = "27"
 TARGET_SDK = "29"
 # 版本号唯一来源：aapt2 link 的这两个参数会覆盖 AndroidManifest.xml 里的同名属性，
 # 所以改版本只改这里（清单里的值只是为了让人看代码时不困惑，保持一致即可）。
-VERSION_CODE = "10"
-VERSION_NAME = "0.8.1"
+VERSION_CODE = "11"
+VERSION_NAME = "0.8.2"
 APK_NAME = "CourseTableWatch.apk"
 
 ADB_FALLBACK = Path(r"E:\platform-tools\adb.exe")
@@ -160,21 +162,81 @@ def clean():
 
 # ---------------------------------------------------------------- 签名
 
+def read_keystore_props():
+    props = {}
+    if KEY_PROPS.exists():
+        for line in KEY_PROPS.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            k, v = line.split("=", 1)
+            props[k.strip()] = v.strip()
+    return props
+
+
 def ensure_keystore(java_home):
-    if KEYSTORE.exists():
-        return
+    """读取发布签名配置；首次构建时生成一份属于本机的发布证书。
+
+    <p>仓库里不放 keystore（`.gitignore` 已挡住 `*.keystore` / `keystore.properties`），
+    每个构建者首次运行会拿到属于自己的签名身份 —— 这也意味着 fork 出来的包不能
+    覆盖安装官方包，符合预期。
+
+    <p><b>这两个文件丢了，就再也签不出能被已装设备接受升级的包。</b>
+    """
+    if KEYSTORE.exists() and KEY_PROPS.exists():
+        return read_keystore_props()
+
     keytool = java_home / "bin" / "keytool.exe"
-    print("\n>>> 生成 debug 签名证书")
+    storepass = secrets.token_urlsafe(18)
+    alias = "coursetable"
+    print("\n>>> 首次构建：生成发布签名证书")
     run([
-        keytool, "-genkeypair", "-v",
+        keytool, "-genkeypair",
         "-keystore", KEYSTORE,
-        "-storepass", "android",
-        "-keypass", "android",
-        "-alias", "androiddebugkey",
+        "-storepass", storepass,
+        "-keypass", storepass,
+        "-alias", alias,
         "-keyalg", "RSA", "-keysize", "2048",
         "-validity", "10000",
-        "-dname", "CN=Android Debug,O=Android,C=US",
+        "-dname", "CN=Course Table Watch,O=OPPOCourseTable,C=CN",
     ])
+    KEY_PROPS.write_text(
+        "# 发布签名配置 —— 不要提交、不要外传\n"
+        "# 丢了就再也签不出能被已装设备接受升级的包，务必备份本文件与 release.keystore\n"
+        "storeFile=release.keystore\n"
+        f"storePassword={storepass}\n"
+        f"keyAlias={alias}\n"
+        f"keyPassword={storepass}\n",
+        encoding="utf-8",
+    )
+    print(f"    已写入 {KEY_PROPS}")
+    print("    [重要] 立刻备份 tools/release.keystore 与 tools/keystore.properties")
+    return read_keystore_props()
+
+
+# ---------------------------------------------------------------- 二维码资源
+
+def ensure_qr_assets():
+    """调用 tools/gen_qr.py 生成下载二维码资源。
+
+    依赖 segno（纯 Python，无编译）。离线环境装不上时，只要上一次生成的资源
+    还在就沿用 —— 二维码内容只在改下载地址时才变，沿用不会出错。
+    """
+    qr_png = GEN_RES / "drawable-nodpi" / "qr_download.png"
+    qr_xml = GEN_RES / "values" / "gen_qr.xml"
+    proc = subprocess.run(
+        [sys.executable, str(ROOT / "tools" / "gen_qr.py")],
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        text=True, encoding="utf-8", errors="replace",
+    )
+    if proc.returncode == 0:
+        print("0/7 生成手机端 App 下载二维码")
+        return
+    if qr_png.exists() and qr_xml.exists():
+        print("0/7 生成手机端 App 下载二维码：跳过（缺少 segno，沿用上一次的资源）")
+        return
+    sys.stdout.write(proc.stdout or "")
+    raise SystemExit("二维码资源不存在且无法生成。先执行：python -m pip install segno")
 
 
 # ---------------------------------------------------------------- 水印自检
@@ -234,8 +296,7 @@ def build():
         d.mkdir(parents=True, exist_ok=True)
 
     # ---------------------------------------------------- 0. 生成资源（下载二维码）
-    run([sys.executable, ROOT / "tools" / "gen_qr.py"],
-        "0/7 生成手机端 App 下载二维码")
+    ensure_qr_assets()
 
     # ---------------------------------------------------- 1. 编译资源
     res_zip = BUILD / "res.zip"
@@ -307,14 +368,19 @@ def build():
         "6/7 zipalign（4 字节对齐）")
 
     # ---------------------------------------------------- 7. 签名
-    ensure_keystore(java_home)
+    props = ensure_keystore(java_home)
+    storepass = props.get("storePassword", "")
+    keypass = props.get("keyPassword") or storepass
+    alias = props.get("keyAlias", "coursetable")
+    if not storepass:
+        raise SystemExit(f"签名配置不完整：{KEY_PROPS} 里缺 storePassword")
     signed = OUT / APK_NAME
     run([
         java, "-jar", apksigner_jar, "sign",
         "--ks", KEYSTORE,
-        "--ks-pass", "pass:android",
-        "--key-pass", "pass:android",
-        "--ks-key-alias", "androiddebugkey",
+        "--ks-pass", f"pass:{storepass}",
+        "--key-pass", f"pass:{keypass}",
+        "--ks-key-alias", alias,
         "--out", signed,
         aligned,
     ], "7/7 apksigner（签名）")
